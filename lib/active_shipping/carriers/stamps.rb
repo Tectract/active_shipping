@@ -9,9 +9,9 @@ module ActiveShipping
     attr_reader :last_swsim_method
 
     # TODO: Update to latest API. Documentation for the latest WSDL version is available here: http://support.stamps.com/outgoing/swsimv39doc.zip
-    LIVE_URL = 'https://swsim.stamps.com/swsim/swsimv34.asmx'
-    TEST_URL = 'https://swsim.testing.stamps.com/swsim/swsimv34.asmx'
-    NAMESPACE = 'http://stamps.com/xml/namespace/2014/01/swsim/swsimv34'
+    LIVE_URL = 'https://swsim.stamps.com/swsim/swsimv75.asmx'
+    TEST_URL = 'https://swsim.testing.stamps.com/swsim/swsimv75.asmx'
+    NAMESPACE = 'http://stamps.com/xml/namespace/2018/10/swsim/swsimv75'
 
     REQUIRED_OPTIONS = [:integration_id, :username, :password].freeze
 
@@ -226,7 +226,7 @@ module ActiveShipping
                  'xmlns:soap' => 'http://schemas.xmlsoap.org/soap/envelope/',
                  'xmlns:xsi'  => 'http://www.w3.org/2001/XMLSchema-instance',
                  'xmlns:xsd'  => 'http://www.w3.org/2001/XMLSchema',
-                 'xmlns:tns'  => 'http://stamps.com/xml/namespace/2014/01/swsim/swsimv34'
+                 'xmlns:tns'  => 'http://stamps.com/xml/namespace/2018/10/swsim/swsimv75'
                 ) do
           xml['soap'].Body do
             yield(xml)
