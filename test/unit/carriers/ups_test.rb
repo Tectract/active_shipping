@@ -7,7 +7,8 @@ class UPSTest < ActiveSupport::TestCase
     @carrier   = UPS.new(
                    :key => 'key',
                    :login => 'login',
-                   :password => 'password'
+                   :password => 'password',
+                   :origin => 'origin'
                  )
     @tracking_response = xml_fixture('ups/shipment_from_tiger_direct')
     @delivery_dates_response = xml_fixture('ups/delivery_dates_response')
@@ -169,6 +170,151 @@ class UPSTest < ActiveSupport::TestCase
   def test_find_tracking_info_should_handle_no_status_node
     @carrier.expects(:commit).returns(xml_fixture('ups/no_status_node_success'))
     response = @carrier.find_tracking_info('1Z5FX0076803466397')
+    assert_equal 'Success', response.params.fetch("Response").fetch("ResponseStatusDescription")
+    assert_empty response.shipment_events
+  end
+
+  def test_find_tracking_info_by_reference_number_should_create_correct_xml
+    xml_request = xml_fixture('ups/access_request') + xml_fixture('ups/tracking_request_by_reference_number')
+    @carrier.expects(:commit).with(:track, xml_request, true).returns(@tracking_response)
+    @carrier.find_tracking_info_by_reference_number('SF0287139422', :test => true)
+  end
+
+  def test_find_tracking_info_by_reference_number_should_return_a_tracking_response
+    @carrier.expects(:commit).returns(@tracking_response)
+    assert_equal 'ActiveShipping::TrackingResponse', @carrier.find_tracking_info_by_reference_number('D019472401013').class.name
+  end
+
+  def test_find_tracking_info_by_reference_number_should_mark_shipment_as_delivered
+    @carrier.expects(:commit).returns(@tracking_response)
+    assert_equal true, @carrier.find_tracking_info_by_reference_number('D019472401013').delivered?
+  end
+
+  def test_find_tracking_info_by_reference_number_should_return_correct_carrier
+    @carrier.expects(:commit).returns(@tracking_response)
+    assert_equal :ups, @carrier.find_tracking_info_by_reference_number('D019472401013').carrier
+  end
+
+  def test_find_tracking_info_by_reference_number_should_return_correct_carrier_name
+    @carrier.expects(:commit).returns(@tracking_response)
+    assert_equal 'UPS', @carrier.find_tracking_info_by_reference_number('D019472401013').carrier_name
+  end
+
+  def test_find_tracking_info_by_reference_number_should_return_correct_status
+    @carrier.expects(:commit).returns(@tracking_response)
+    assert_equal :delivered, @carrier.find_tracking_info_by_reference_number('D019472401013').status
+  end
+
+  def test_find_tracking_info_by_reference_number_should_return_correct_status_code
+    @carrier.expects(:commit).returns(@tracking_response)
+    assert_equal 'd', @carrier.find_tracking_info_by_reference_number('D019472401013').status_code.downcase
+  end
+
+  def test_find_tracking_info_by_reference_number_should_return_correct_status_description
+    @carrier.expects(:commit).returns(@tracking_response)
+    assert_equal 'delivered', @carrier.find_tracking_info_by_reference_number('D019472401013').status_description.downcase
+  end
+
+  def test_find_tracking_info_by_reference_number_should_return_delivery_signature
+    @carrier.expects(:commit).returns(@tracking_response)
+    assert_equal 'MCAULEY', @carrier.find_tracking_info_by_reference_number('D019472401013').delivery_signature
+  end
+
+  def test_find_tracking_info_by_reference_number_should_have_an_out_for_delivery_status
+    out_for_delivery_tracking_response = xml_fixture('ups/out_for_delivery_shipment')
+    @carrier.expects(:commit).returns(out_for_delivery_tracking_response)
+    assert_equal :out_for_delivery, @carrier.find_tracking_info_by_reference_number('D019472401013').status
+  end
+
+  def test_find_tracking_info_by_reference_number_should_return_destination_address
+    @carrier.expects(:commit).returns(@tracking_response)
+    result = @carrier.find_tracking_info_by_reference_number('D019472401013')
+    assert_equal 'ottawa', result.destination.city.downcase
+    assert_equal 'ON', result.destination.state
+  end
+
+  def test_find_tracking_info_by_reference_number_should_return_destination_address_for_abbreviated_response
+    tracking_response = xml_fixture('ups/delivered_shipment_without_events_tracking_response')
+    @carrier.expects(:commit).returns(tracking_response)
+    result = @carrier.find_tracking_info_by_reference_number('D019472401013')
+    assert_equal 'cypress', result.destination.city.downcase
+    assert_equal 'TX', result.destination.state
+  end
+
+  def test_find_tracking_info_by_reference_number_should_return_delivered_if_event_is_not_latest
+    tracking_response = xml_fixture('ups/delivered_shipment_with_refund')
+    @carrier.expects(:commit).returns(tracking_response)
+    result = @carrier.find_tracking_info_by_reference_number('D019472401013')
+    assert_equal :delivered, result.status
+    assert_equal true, result.delivered?
+  end
+
+  def test_find_tracking_info_by_reference_number_should_return_origin_address
+    @carrier.expects(:commit).returns(@tracking_response)
+    result = @carrier.find_tracking_info_by_reference_number('D019472401013')
+    assert_equal 'naperville', result.origin.city.downcase
+    assert_equal 'IL', result.origin.state
+  end
+
+  def test_find_tracking_info_by_reference_number_should_parse_response_into_correct_number_of_shipment_events
+    @carrier.expects(:commit).returns(@tracking_response)
+    response = @carrier.find_tracking_info_by_reference_number('D019472401013')
+    assert_equal 8, response.shipment_events.size
+  end
+
+  def test_find_tracking_info_by_reference_number_should_return_shipment_events_in_ascending_chronological_order
+    @carrier.expects(:commit).returns(@tracking_response)
+    response = @carrier.find_tracking_info_by_reference_number('D019472401013')
+    assert_equal response.shipment_events.map(&:time).sort, response.shipment_events.map(&:time)
+  end
+
+  def test_find_tracking_info_by_reference_number_should_have_correct_names_for_shipment_events
+    @carrier.expects(:commit).returns(@tracking_response)
+    response = @carrier.find_tracking_info_by_reference_number('D019472401013')
+    assert_equal ["BILLING INFORMATION RECEIVED",
+                  "IMPORT SCAN",
+                  "LOCATION SCAN",
+                  "LOCATION SCAN",
+                  "DEPARTURE SCAN",
+                  "ARRIVAL SCAN",
+                  "OUT FOR DELIVERY",
+                  "DELIVERED"], response.shipment_events.map(&:name)
+  end
+
+  def test_find_tracking_info_by_reference_number_should_have_messages_for_shipment_events
+    @carrier.expects(:commit).returns(@tracking_response)
+    response = @carrier.find_tracking_info_by_reference_number('D019472401013')
+    assert_equal ["BILLING INFORMATION RECEIVED",
+                  "IMPORT SCAN",
+                  "LOCATION SCAN",
+                  "LOCATION SCAN",
+                  "DEPARTURE SCAN",
+                  "ARRIVAL SCAN",
+                  "OUT FOR DELIVERY",
+                  "DELIVERED"], response.shipment_events.map(&:message)
+  end
+
+  def test_find_tracking_info_by_reference_number_should_have_correct_type_codes_for_shipment_events
+    @carrier.expects(:commit).returns(@tracking_response)
+    response = @carrier.find_tracking_info_by_reference_number('D019472401013')
+    assert_equal ["M", "I", "I", "I", "I", "I", "I", "D"], response.shipment_events.map(&:type_code)
+  end
+
+  def test_find_tracking_info_should_return_correct_actual_delivery_date
+    @carrier.expects(:commit).returns(@tracking_response)
+    response = @carrier.find_tracking_info_by_reference_number('D019472401013')
+    assert_equal Time.parse('2008-06-25 11:19:00 UTC'), response.actual_delivery_date
+  end
+
+  def test_find_tracking_info_by_reference_number_should_return_correct_rescheduled_delivery_date
+    @carrier.expects(:commit).returns(xml_fixture('ups/rescheduled_shipment'))
+    response = @carrier.find_tracking_info_by_reference_number('D019472401013')
+    assert_equal Time.parse('2015-01-29 00:00:00 UTC'), response.scheduled_delivery_date
+  end
+
+  def test_find_tracking_info_by_reference_number_should_handle_no_status_node
+    @carrier.expects(:commit).returns(xml_fixture('ups/no_status_node_success'))
+    response = @carrier.find_tracking_info_by_reference_number('D019472401013')
     assert_equal 'Success', response.params.fetch("Response").fetch("ResponseStatusDescription")
     assert_empty response.shipment_events
   end
