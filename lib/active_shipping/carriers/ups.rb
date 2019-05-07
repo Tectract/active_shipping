@@ -173,10 +173,24 @@ module ActiveShipping
     #   response should a list of shipment tracking events if successful.
     def find_tracking_info(tracking_number, options = {})
       options = @options.merge(options)
-      access_request = build_access_request
       tracking_request = build_tracking_request(tracking_number, options)
-      response = commit(:track, save_request(access_request + tracking_request), options[:test])
-      parse_tracking_response(response, options)
+      get_tracking_info(tracking_request, options)
+    end
+
+    # Retrieves  tracking information by reference number
+    #
+    # @note Override with whatever you need to get a shipping label
+    #
+    # @param reference_number [String] The customer assigned reference number.
+    # Required if a Shipment Identification Number or Tracking Number is not present.
+    #
+    # @param options [Hash] Carrier-specific parameters.
+    # @return [ActiveShipping::TrackingResponse] The response from the carrier. This
+    #   response should a list of shipment tracking events if successful.
+    def find_tracking_info_by_reference_number(reference_number, options = {})
+      options = @options.merge(options)
+      tracking_request = build_tracking_request_reference_number(reference_number, options)
+      get_tracking_info(tracking_request, options)
     end
 
     def create_shipment(origin, destination, packages, options = {})
@@ -251,6 +265,12 @@ module ActiveShipping
     end
 
     protected
+
+    def get_tracking_info(tracking_request, options)
+      access_request = build_access_request
+      response = commit(:track, save_request(access_request + tracking_request), options[:test])
+      parse_tracking_response(response, options)
+    end
 
     def upsified_location(location)
       if location.country_code == 'US' && US_TERRITORIES_TREATED_AS_COUNTRIES.include?(location.state)
@@ -631,6 +651,23 @@ module ActiveShipping
           end
           xml.TrackingNumber(tracking_number.to_s)
           xml.TrackingOption('03') if options[:mail_innovations]
+        end
+      end
+      xml_builder.to_xml
+    end
+
+    def build_tracking_request_reference_number(reference_number, options = {})
+      xml_builder = Nokogiri::XML::Builder.new do |xml|
+        xml.TrackRequest do
+          xml.TrackingOption(options[:tracking_option]) if options[:tracking_option]
+          xml.Request do
+            xml.RequestAction('Track')
+            xml.RequestOption('1')
+          end
+          xml.ReferenceNumber do
+            xml.Value(reference_number.to_s)
+          end
+          xml.ShipperNumber(options[:origin])
         end
       end
       xml_builder.to_xml
