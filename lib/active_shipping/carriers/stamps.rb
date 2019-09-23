@@ -9,9 +9,9 @@ module ActiveShipping
     attr_reader :last_swsim_method
 
     # TODO: Update to latest API. Documentation for the latest WSDL version is available here: http://support.stamps.com/outgoing/swsimv39doc.zip
-    LIVE_URL = 'https://swsim.stamps.com/swsim/swsimv75.asmx'
-    TEST_URL = 'https://swsim.testing.stamps.com/swsim/swsimv75.asmx'
-    NAMESPACE = 'http://stamps.com/xml/namespace/2018/10/swsim/swsimv75'
+    LIVE_URL = 'https://swsim.stamps.com/swsim/swsimv84.asmx'
+    TEST_URL = 'https://swsim.testing.stamps.com/swsim/swsimv84.asmx'
+    NAMESPACE = 'http://stamps.com/xml/namespace/2019/09/swsim/SwsimV84'
 
     REQUIRED_OPTIONS = [:integration_id, :username, :password].freeze
 
@@ -226,7 +226,7 @@ module ActiveShipping
                  'xmlns:soap' => 'http://schemas.xmlsoap.org/soap/envelope/',
                  'xmlns:xsi'  => 'http://www.w3.org/2001/XMLSchema-instance',
                  'xmlns:xsd'  => 'http://www.w3.org/2001/XMLSchema',
-                 'xmlns:tns'  => 'http://stamps.com/xml/namespace/2018/10/swsim/swsimv75'
+                 'xmlns:tns'  =>  NAMESPACE
                 ) do
           xml['soap'].Body do
             yield(xml)
@@ -351,7 +351,7 @@ module ActiveShipping
         unless add_ons.empty?
           xml['tns'].AddOns do
             add_ons.each do |add_on|
-              xml['tns'].AddOnV13 do
+              xml['tns'].AddOnV15 do
                 xml['tns'].AddOnType(add_on)
               end
             end
@@ -660,14 +660,14 @@ module ActiveShipping
 
     def parse_add_ons(rate)
       add_ons = {}
-      rate.xpath('AddOns/AddOnV13').each do |add_on|
+      rate.xpath('AddOns/AddOnV15').each do |add_on|
         add_on_type = add_on.at('AddOnType').text
 
         add_on_details = {}
         add_on_details[:missing_data] = parse_content(add_on, 'MissingData') if add_on.at('MissingData')
         add_on_details[:amount]       = parse_content(add_on, 'Amount') if add_on.at('Amount')
 
-        prohibited_with = add_on.xpath('ProhibitedWithAnyOf/AddOnTypeV13').map(&:text)
+        prohibited_with = add_on.xpath('ProhibitedWithAnyOf/AddOnTypeV15').map(&:text)
         add_on_details[:prohibited_with] = prohibited_with unless prohibited_with.empty?
 
         add_ons[add_on_type] = add_on_details
