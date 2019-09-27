@@ -167,6 +167,11 @@ module ActiveShipping
       commit(:TrackShipment, request)
     end
 
+    def cancel_shipment(tracking, options = {})
+      request = build_cancel_indicium_request(tracking, options)
+      commit(:CancelIndicium, request)
+    end
+
     def namespace
       NAMESPACE
     end
@@ -441,6 +446,15 @@ module ActiveShipping
     def build_track_shipment_request(shipment_id, options)
       build_header do |xml|
         xml['tns'].TrackShipment do
+          xml['tns'].Authenticator(authenticator)
+          xml['tns'].public_send(options[:stamps_tx_id] ? :StampsTxID : :TrackingNumber, shipment_id)
+        end
+      end
+    end
+
+    def build_cancel_indicium_request(shipment_id, options)
+      build_header do |xml|
+        xml['tns'].CancelIndicium do
           xml['tns'].Authenticator(authenticator)
           xml['tns'].public_send(options[:stamps_tx_id] ? :StampsTxID : :TrackingNumber, shipment_id)
         end
@@ -744,6 +758,13 @@ module ActiveShipping
       response_options[:delivered] = response_options[:status] == :delivered
 
       TrackingResponse.new(true, '', {}, response_options)
+    end
+
+    def parse_cancel_indicium_response(cancel_indicium, response_options)
+      parse_authenticator(track_shipment)
+
+      # Nothing on the response to return, will throw exception on error
+      true
     end
 
     def parse_content(node, child)
