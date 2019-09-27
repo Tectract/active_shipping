@@ -167,7 +167,7 @@ module ActiveShipping
       commit(:TrackShipment, request)
     end
 
-    def cancel_shipment(tracking, options={})
+    def cancel_shipment(tracking, options = {})
       request = build_cancel_indicium_request(tracking, options)
       commit(:CancelIndicium, request)
     end
