@@ -761,7 +761,7 @@ module ActiveShipping
     end
 
     def parse_cancel_indicium_response(cancel_indicium, response_options)
-      parse_authenticator(track_shipment)
+      parse_authenticator(cancel_indicium)
 
       # Nothing on the response to return, will throw exception on error
       true
