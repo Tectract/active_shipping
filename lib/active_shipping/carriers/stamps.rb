@@ -167,9 +167,14 @@ module ActiveShipping
       commit(:TrackShipment, request)
     end
 
-    def cancel_shipment(tracking, options = {})
-      request = build_cancel_indicium_request(tracking, options)
+    def cancel_shipment(shipment_id, options = {})
+      request = build_cancel_indicium_request(shipment_id, options)
       commit(:CancelIndicium, request)
+    end
+
+    def create_manifest(shipment_ids, origin, options = {})
+      request = build_create_manifest_request(shipment_ids, origin, options)
+      commit(:CreateScanForm, request)
     end
 
     def namespace
@@ -457,6 +462,23 @@ module ActiveShipping
         xml['tns'].CancelIndicium do
           xml['tns'].Authenticator(authenticator)
           xml['tns'].public_send(options[:stamps_tx_id] ? :StampsTxID : :TrackingNumber, shipment_id)
+        end
+      end
+    end
+
+    def build_create_manifest_request(shipment_ids, origin, options)
+      build_header do |xml|
+        xml['tns'].CreateManifest do
+          xml['tns'].Authenticator(authenticator)
+          xml['tns'].IntegratorTxID(options[:integrator_tx_id] || SecureRandom::uuid)
+          xml['tns']
+          xml['tns'].public_send(options[:stamps_tx_ids] ? :StampsTxIDs : :TrackingNumbers) do
+            [shipment_ids].flatten.map { |shipment_id| xml['tns'].string(shipment_id) }
+          end
+          add_address(xml, origin, :FromAddress)
+          xml['tns'].ImageType(options[:image_type]) unless options[:image_type].blank?
+          xml['tns'].PrintInstructions(options[:print_instructions].present?)
+          xml['tns'].ManifestType(options[:manifest_type]) unless options[:manifest_type].blank?
         end
       end
     end
@@ -765,6 +787,11 @@ module ActiveShipping
 
       # Nothing on the response to return, will throw exception on error
       true
+    end
+
+    def parse_create_manifest_response(create_manifest, response_options)
+      p create_manifest
+      p response_options
     end
 
     def parse_content(node, child)
