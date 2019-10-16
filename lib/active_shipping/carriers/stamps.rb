@@ -174,7 +174,7 @@ module ActiveShipping
 
     def create_manifest(shipment_ids, origin, options = {})
       request = build_create_manifest_request(shipment_ids, origin, options)
-      commit(:CreateScanForm, request)
+      commit(:CreateManifest, request)
     end
 
     def namespace
@@ -486,13 +486,20 @@ module ActiveShipping
     def commit(swsim_method, request)
       save_request(request)
       save_swsim_method(swsim_method)
-      parse(ssl_post(request_url, request, 'Content-Type' => 'text/xml', 'SOAPAction' => soap_action(swsim_method)))
+      parse(ssl_post(request_url, request, request_headers(swsim_method)))
     rescue ActiveUtils::ResponseError => e
       parse(e.response.body)
     end
 
     def request_url
       test_mode? ? TEST_URL : LIVE_URL
+    end
+
+    def request_headers(swsim_method)
+      {
+        'Content-Type' => 'text/xml',
+        'SOAPAction' => soap_action(swsim_method)
+      }
     end
 
     def soap_action(method)
@@ -790,8 +797,20 @@ module ActiveShipping
     end
 
     def parse_create_manifest_response(create_manifest, response_options)
-      p create_manifest
-      p response_options
+      parse_authenticator(create_manifest)
+
+      manifests = create_manifest.xpath('EndOfDayManifests/EndOfDayManifest').map do |manifest|
+        carrier = manifest.at('PickupCarrier').text
+        type = manifest.at('ManifestType').text
+        id = manifest.at('ManifestId').text
+        url = manifest.at('ManifestUrl').text
+
+        Manifest.new(carrier, type, id, url)
+      end
+
+      response_options[:manifests] = manifests
+
+      StampsCreateManifestResponse.new(true, '', {}, response_options)
     end
 
     def parse_content(node, child)
@@ -903,6 +922,15 @@ module ActiveShipping
 
     def image
       @image_data ||= ssl_get(label_url)
+    end
+  end
+
+  class StampsCreateManifestResponse < Response
+    attr_reader :manifests
+
+    def initialize(success, message, params = {}, options = {})
+      super
+      @manifests = options[:manifests]
     end
   end
 end
