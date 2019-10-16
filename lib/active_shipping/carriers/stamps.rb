@@ -471,7 +471,6 @@ module ActiveShipping
         xml['tns'].CreateManifest do
           xml['tns'].Authenticator(authenticator)
           xml['tns'].IntegratorTxID(options[:integrator_tx_id] || SecureRandom::uuid)
-          xml['tns']
           xml['tns'].public_send(options[:stamps_tx_ids] ? :StampsTxIDs : :TrackingNumbers) do
             [shipment_ids].flatten.map { |shipment_id| xml['tns'].string(shipment_id) }
           end
