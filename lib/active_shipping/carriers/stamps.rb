@@ -167,9 +167,14 @@ module ActiveShipping
       commit(:TrackShipment, request)
     end
 
-    def cancel_shipment(tracking, options = {})
-      request = build_cancel_indicium_request(tracking, options)
+    def cancel_shipment(shipment_id, options = {})
+      request = build_cancel_indicium_request(shipment_id, options)
       commit(:CancelIndicium, request)
+    end
+
+    def create_manifest(shipment_ids, origin, options = {})
+      request = build_create_manifest_request(shipment_ids, origin, options)
+      commit(:CreateManifest, request)
     end
 
     def namespace
@@ -461,16 +466,39 @@ module ActiveShipping
       end
     end
 
+    def build_create_manifest_request(shipment_ids, origin, options)
+      build_header do |xml|
+        xml['tns'].CreateManifest do
+          xml['tns'].Authenticator(authenticator)
+          xml['tns'].IntegratorTxID(options[:integrator_tx_id] || SecureRandom::uuid)
+          xml['tns'].public_send(options[:stamps_tx_ids] ? :StampsTxIDs : :TrackingNumbers) do
+            [shipment_ids].flatten.map { |shipment_id| xml['tns'].string(shipment_id) }
+          end
+          add_address(xml, origin, :FromAddress)
+          xml['tns'].ImageType(options[:image_type]) unless options[:image_type].blank?
+          xml['tns'].PrintInstructions(options[:print_instructions].present?)
+          xml['tns'].ManifestType(options[:manifest_type]) unless options[:manifest_type].blank?
+        end
+      end
+    end
+
     def commit(swsim_method, request)
       save_request(request)
       save_swsim_method(swsim_method)
-      parse(ssl_post(request_url, request, 'Content-Type' => 'text/xml', 'SOAPAction' => soap_action(swsim_method)))
+      parse(ssl_post(request_url, request, request_headers(swsim_method)))
     rescue ActiveUtils::ResponseError => e
       parse(e.response.body)
     end
 
     def request_url
       test_mode? ? TEST_URL : LIVE_URL
+    end
+
+    def request_headers(swsim_method)
+      {
+        'Content-Type' => 'text/xml',
+        'SOAPAction' => soap_action(swsim_method)
+      }
     end
 
     def soap_action(method)
@@ -767,6 +795,23 @@ module ActiveShipping
       true
     end
 
+    def parse_create_manifest_response(create_manifest, response_options)
+      parse_authenticator(create_manifest)
+
+      manifests = create_manifest.xpath('EndOfDayManifests/EndOfDayManifest').map do |manifest|
+        carrier = manifest.at('PickupCarrier').text
+        type = manifest.at('ManifestType').text
+        id = manifest.at('ManifestId').text
+        url = manifest.at('ManifestUrl').text
+
+        Manifest.new(carrier, type, id, url)
+      end
+
+      response_options[:manifests] = manifests
+
+      StampsCreateManifestResponse.new(true, '', {}, response_options)
+    end
+
     def parse_content(node, child)
       return unless node.at(child) && node.at(child).text != ''
       node.at(child).text
@@ -876,6 +921,15 @@ module ActiveShipping
 
     def image
       @image_data ||= ssl_get(label_url)
+    end
+  end
+
+  class StampsCreateManifestResponse < Response
+    attr_reader :manifests
+
+    def initialize(success, message, params = {}, options = {})
+      super
+      @manifests = options[:manifests]
     end
   end
 end
