@@ -891,6 +891,9 @@ module ActiveShipping
           location_from_address_node(first_shipment.at("#{location}/Address"))
         end
 
+        # Service code
+        service_code = first_shipment.xpath('Service/Code').text
+
         # Get status, tracking, etc for each package
         packages = first_shipment.xpath('Package').map do |package|
           # Tracking Number
@@ -992,6 +995,7 @@ module ActiveShipping
                            :origin => origin,
                            :destination => destination,
                            :packages => packages,
+                           :service_code => service_code,
                            # For legacy purposes, shipment level values default to first package values
                            :status => packages.first&.status,
                            :status_code => packages.first&.status_code,

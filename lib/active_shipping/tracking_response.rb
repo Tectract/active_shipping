@@ -50,8 +50,8 @@ module ActiveShipping
   # @!attribute destination
   #   @return [ActiveShipping::Location]
   class TrackingResponse < Response
-    attr_reader :carrier,:carrier_name,
-                :status,:status_code, :status_description,
+    attr_reader :carrier, :carrier_name, :service_code,
+                :status, :status_code, :status_description,
                 :ship_time, :scheduled_delivery_date, :actual_delivery_date, :attempted_delivery_date,
                 :delivery_signature, :tracking_number, :shipment_events,
                 :shipper_address, :origin, :destination, :packages
@@ -60,6 +60,7 @@ module ActiveShipping
     def initialize(success, message, params = {}, options = {})
       @carrier = options[:carrier].parameterize.to_sym
       @carrier_name = options[:carrier]
+      @service_code = options[:service_code]
       @status = options[:status]
       @status_code = options[:status_code]
       @status_description = options[:status_description]
