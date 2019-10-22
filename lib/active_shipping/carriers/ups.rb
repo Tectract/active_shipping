@@ -881,106 +881,120 @@ module ActiveShipping
 
       if success
         delivery_signature = nil
-        exception_event, scheduled_delivery_date, actual_delivery_date = nil
-        delivered, exception = false
+        scheduled_delivery_date, actual_delivery_date = nil
         shipment_events = []
 
         first_shipment = xml.root.at('Shipment')
-        first_package = first_shipment.at('Package')
-        tracking_number = first_shipment.at_xpath('ShipmentIdentificationNumber | Package/TrackingNumber').text
 
-        # Build status hash
-        status_nodes = first_package.css('Activity > Status > StatusType')
-
-        if status_nodes.present?
-          # Prefer a delivery node
-          status_node = status_nodes.detect { |x| x.at('Code').text == 'D' }
-          status_node ||= status_nodes.first
-
-          status_code = status_node.at('Code').try(:text)
-          status_description = status_node.at('Description').try(:text)
-          status = TRACKING_STATUS_CODES[status_code]
-
-          if status_description =~ /out.*delivery/i
-            status = :out_for_delivery
-          end
-        end
-
+        # To/From data
         origin, destination = %w(Shipper ShipTo).map do |location|
           location_from_address_node(first_shipment.at("#{location}/Address"))
         end
 
-        # Get scheduled delivery date
-        unless status == :delivered
-          scheduled_delivery_date_node = first_shipment.at('ScheduledDeliveryDate')
-          scheduled_delivery_date_node ||= first_shipment.at('RescheduledDeliveryDate')
+        # Get status, tracking, etc for each package
+        packages = first_shipment.xpath('Package').map do |package|
+          tracking_number = package.at('TrackingNumber').text
 
-          if scheduled_delivery_date_node
-            scheduled_delivery_date = parse_ups_datetime(
-              :date => scheduled_delivery_date_node,
-              :time => nil
-              )
+          # Get the package status
+          status_nodes = package.css('Activity > Status > StatusType')
+          if status_nodes.present?
+            # Prefer a delivery node
+            status_node = status_nodes.detect { |x| x.at('Code').text == 'D' }
+            status_node ||= status_nodes.first
+
+            status_code = status_node.at('Code').try(:text)
+            status_description = status_node.at('Description').try(:text)
+            status = TRACKING_STATUS_CODES[status_code]
+
+            if status_description =~ /out.*delivery/i
+              status = :out_for_delivery
+            end
+          end
+
+          # Scheduled delivery date
+          unless status == :delivered
+            scheduled_delivery_date_node = first_shipment.at('ScheduledDeliveryDate')
+            scheduled_delivery_date_node ||= first_shipment.at('RescheduledDeliveryDate')
+
+            if scheduled_delivery_date_node
+              scheduled_delivery_date = parse_ups_datetime(
+                :date => scheduled_delivery_date_node,
+                :time => nil
+                )
+            end
+          end
+
+          activities = package.css('> Activity')
+          unless activities.empty?
+            shipment_events = activities.map do |activity|
+              description = activity.at('Status/StatusType/Description').try(:text)
+              type_code = activity.at('Status/StatusType/Code').try(:text)
+              zoneless_time = parse_ups_datetime(:time => activity.at('Time'), :date => activity.at('Date'))
+              location = location_from_address_node(activity.at('ActivityLocation/Address'))
+              ShipmentEvent.new(description, zoneless_time, location, description, type_code)
+            end
+
+            shipment_events = shipment_events.sort_by(&:time)
+
+            # UPS will sometimes archive a shipment, stripping all shipment activity except for the delivery
+            # event (see test/fixtures/xml/delivered_shipment_without_events_tracking_response.xml for an example).
+            # This adds an origin event to the shipment activity in such cases.
+            if origin && !(shipment_events.count == 1 && status == :delivered)
+              first_event = shipment_events[0]
+              origin_event = ShipmentEvent.new(first_event.name, first_event.time, origin, first_event.message, first_event.type_code)
+
+              if within_same_area?(origin, first_event.location)
+                shipment_events[0] = origin_event
+              else
+                shipment_events.unshift(origin_event)
+              end
+            end
+
+            # Has the shipment been delivered?
+            if status == :delivered
+              delivered_activity = activities.first
+              delivery_signature = delivered_activity.at('ActivityLocation/SignedForByName').try(:text)
+              if delivered_activity.at('Status/StatusType/Code').text == 'D'
+                actual_delivery_date = parse_ups_datetime(:date => delivered_activity.at('Date'), :time => delivered_activity.at('Time'))
+              end
+              unless destination
+                destination = shipment_events[-1].location
+              end
+              shipment_events[-1] = ShipmentEvent.new(shipment_events.last.name, shipment_events.last.time, destination, shipment_events.last.message, shipment_events.last.type_code)
+            end
+
+            UpsTrackedPackage.new(
+              :carrier => @@name,
+              :status => status,
+              :status_code => status_code,
+              :status_description => status_description,
+              :delivery_signature => delivery_signature,
+              :scheduled_delivery_date => scheduled_delivery_date,
+              :actual_delivery_date => actual_delivery_date,
+              :shipment_events => shipment_events,
+              :origin => origin,
+              :destination => destination,
+              :tracking_number => tracking_number
+            )
           end
         end
-
-        activities = first_package.css('> Activity')
-        unless activities.empty?
-          shipment_events = activities.map do |activity|
-            description = activity.at('Status/StatusType/Description').try(:text)
-            type_code = activity.at('Status/StatusType/Code').try(:text)
-            zoneless_time = parse_ups_datetime(:time => activity.at('Time'), :date => activity.at('Date'))
-            location = location_from_address_node(activity.at('ActivityLocation/Address'))
-            ShipmentEvent.new(description, zoneless_time, location, description, type_code)
-          end
-
-          shipment_events = shipment_events.sort_by(&:time)
-
-          # UPS will sometimes archive a shipment, stripping all shipment activity except for the delivery
-          # event (see test/fixtures/xml/delivered_shipment_without_events_tracking_response.xml for an example).
-          # This adds an origin event to the shipment activity in such cases.
-          if origin && !(shipment_events.count == 1 && status == :delivered)
-            first_event = shipment_events[0]
-            origin_event = ShipmentEvent.new(first_event.name, first_event.time, origin, first_event.message, first_event.type_code)
-
-            if within_same_area?(origin, first_event.location)
-              shipment_events[0] = origin_event
-            else
-              shipment_events.unshift(origin_event)
-            end
-          end
-
-          # Has the shipment been delivered?
-          if status == :delivered
-            delivered_activity = activities.first
-            delivery_signature = delivered_activity.at('ActivityLocation/SignedForByName').try(:text)
-            if delivered_activity.at('Status/StatusType/Code').text == 'D'
-              actual_delivery_date = parse_ups_datetime(:date => delivered_activity.at('Date'), :time => delivered_activity.at('Time'))
-            end
-            unless destination
-              destination = shipment_events[-1].location
-            end
-            shipment_events[-1] = ShipmentEvent.new(shipment_events.last.name, shipment_events.last.time, destination, shipment_events.last.message, shipment_events.last.type_code)
-          end
-        end
-
       end
+
       TrackingResponse.new(success, message, Hash.from_xml(response).values.first,
                            :carrier => @@name,
                            :xml => response,
                            :request => last_request,
-                           :status => status,
-                           :status_code => status_code,
-                           :status_description => status_description,
-                           :delivery_signature => delivery_signature,
-                           :scheduled_delivery_date => scheduled_delivery_date,
-                           :actual_delivery_date => actual_delivery_date,
-                           :shipment_events => shipment_events,
-                           :delivered => delivered,
-                           :exception => exception,
-                           :exception_event => exception_event,
                            :origin => origin,
                            :destination => destination,
-                           :tracking_number => tracking_number)
+                           :packages => packages,
+                           # For legacy purposes, shipment level values default to first package values
+                           :status => packages.first&.status,
+                           :status_code => packages.first&.status_code,
+                           :status_description => packages.first&.status_description,
+                           :delivery_signature => packages.first&.delivery_signature,
+                           :scheduled_delivery_date => packages.first&.scheduled_delivery_date,
+                           :actual_delivery_date => packages.first&.actual_delivery_date,
+                           :shipment_events => packages.first&.shipment_events)
     end
 
     def parse_delivery_dates_response(origin, destination, packages, response, options={})
@@ -1247,5 +1261,64 @@ module ActiveShipping
     def mapped_country_code(country_code)
       COUNTRY_MAPPING[country_code].presence || country_code
     end
+  end
+
+  #
+  # This is very similar to TrackingResponse but serves as a container
+  # for individual packages on the shipment.
+  #
+  # The TrackingResponse is populated with the *first* UpsTrackedPackage,
+  # this imitates how ActiveShipping originally worked
+  #
+  class UpsTrackedPackage
+    attr_reader :carrier,:carrier_name,
+                :status,:status_code, :status_description,
+                :ship_time, :scheduled_delivery_date, :actual_delivery_date, :attempted_delivery_date,
+                :delivery_signature, :tracking_number, :shipment_events,
+                :shipper_address, :origin, :destination
+
+    def initialize(options)
+      @carrier = options[:carrier].parameterize.to_sym
+      @carrier_name = options[:carrier]
+      @status = options[:status]
+      @status_code = options[:status_code]
+      @status_description = options[:status_description]
+      @ship_time = options[:ship_time]
+      @scheduled_delivery_date = options[:scheduled_delivery_date]
+      @actual_delivery_date = options[:actual_delivery_date]
+      @attempted_delivery_date = options[:attempted_delivery_date]
+      @delivery_signature = options[:delivery_signature]
+      @tracking_number = options[:tracking_number]
+      @shipment_events = Array(options[:shipment_events])
+      @shipper_address = options[:shipper_address]
+      @origin = options[:origin]
+      @destination = options[:destination]
+    end
+
+    # The latest tracking event for this shipment, i.e. the current status.
+    # @return [ActiveShipping::ShipmentEvent]
+    def latest_event
+      @shipment_events.last
+    end
+
+    # Returns `true` if the shipment has arrived at the destination.
+    # @return [Boolean]
+    def is_delivered?
+      @status == :delivered
+    end
+
+    # Returns `true` if something out of the ordinary has happened during
+    # the delivery of this package.
+    # @return [Boolean]
+    def has_exception?
+      @status == :exception
+    end
+
+    alias_method :exception_event, :latest_event
+    alias_method :delivered?, :is_delivered?
+    alias_method :exception?, :has_exception?
+    alias_method :scheduled_delivery_time, :scheduled_delivery_date
+    alias_method :actual_delivery_time, :actual_delivery_date
+    alias_method :attempted_delivery_time, :attempted_delivery_date
   end
 end

@@ -54,7 +54,7 @@ module ActiveShipping
                 :status,:status_code, :status_description,
                 :ship_time, :scheduled_delivery_date, :actual_delivery_date, :attempted_delivery_date,
                 :delivery_signature, :tracking_number, :shipment_events,
-                :shipper_address, :origin, :destination
+                :shipper_address, :origin, :destination, :packages
 
     # @params (see ActiveShipping::Response#initialize)
     def initialize(success, message, params = {}, options = {})
@@ -73,6 +73,7 @@ module ActiveShipping
       @shipper_address = options[:shipper_address]
       @origin = options[:origin]
       @destination = options[:destination]
+      @packages = options[:packages]
       super
     end
 
@@ -86,6 +87,10 @@ module ActiveShipping
     # @return [Boolean]
     def is_delivered?
       @status == :delivered
+    end
+
+    def all_delivered?
+      packages.all? { |package| package.is_delivered? }
     end
 
     # Returns `true` if something out of the ordinary has happened during
