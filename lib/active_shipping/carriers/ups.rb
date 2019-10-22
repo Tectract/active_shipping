@@ -893,7 +893,11 @@ module ActiveShipping
 
         # Get status, tracking, etc for each package
         packages = first_shipment.xpath('Package').map do |package|
+          # Tracking Number
           tracking_number = package.at('TrackingNumber').text
+
+          # Weight
+          weight_lbs = package.xpath('PackageWeight/Weight').text
 
           # Get the package status
           status_nodes = package.css('Activity > Status > StatusType')
@@ -974,7 +978,8 @@ module ActiveShipping
               :shipment_events => shipment_events,
               :origin => origin,
               :destination => destination,
-              :tracking_number => tracking_number
+              :tracking_number => tracking_number,
+              :weight_lbs => weight_lbs
             )
           end
         end
@@ -1275,7 +1280,7 @@ module ActiveShipping
                 :status,:status_code, :status_description,
                 :ship_time, :scheduled_delivery_date, :actual_delivery_date, :attempted_delivery_date,
                 :delivery_signature, :tracking_number, :shipment_events,
-                :shipper_address, :origin, :destination
+                :shipper_address, :origin, :destination, :weight_lbs
 
     def initialize(options)
       @carrier = options[:carrier].parameterize.to_sym
@@ -1293,6 +1298,7 @@ module ActiveShipping
       @shipper_address = options[:shipper_address]
       @origin = options[:origin]
       @destination = options[:destination]
+      @weight_lbs = options[:weight_lbs]
     end
 
     # The latest tracking event for this shipment, i.e. the current status.
