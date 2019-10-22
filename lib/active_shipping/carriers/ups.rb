@@ -997,13 +997,13 @@ module ActiveShipping
                            :packages => packages,
                            :service_code => service_code,
                            # For legacy purposes, shipment level values default to first package values
-                           :status => packages.first&.status,
-                           :status_code => packages.first&.status_code,
-                           :status_description => packages.first&.status_description,
-                           :delivery_signature => packages.first&.delivery_signature,
-                           :scheduled_delivery_date => packages.first&.scheduled_delivery_date,
-                           :actual_delivery_date => packages.first&.actual_delivery_date,
-                           :shipment_events => packages.first&.shipment_events)
+                           :status => packages&.first&.status,
+                           :status_code => packages&.first&.status_code,
+                           :status_description => packages&.first&.status_description,
+                           :delivery_signature => packages&.first&.delivery_signature,
+                           :scheduled_delivery_date => packages&.first&.scheduled_delivery_date,
+                           :actual_delivery_date => packages&.first&.actual_delivery_date,
+                           :shipment_events => packages&.first&.shipment_events)
     end
 
     def parse_delivery_dates_response(origin, destination, packages, response, options={})
