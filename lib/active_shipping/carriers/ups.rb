@@ -895,7 +895,7 @@ module ActiveShipping
         service_code = first_shipment.xpath('Service/Code').text
 
         # Get status, tracking, etc for each package
-        packages = first_shipment.xpath('Package').map do |package|
+        packages = xml.root.xpath('Shipment/Package').map do |package|
           # Tracking Number
           tracking_number = package.at('TrackingNumber').text
 
