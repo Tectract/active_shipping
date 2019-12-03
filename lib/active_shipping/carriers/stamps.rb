@@ -305,8 +305,8 @@ module ActiveShipping
           xml['tns'].State(       address.state) unless address.state.blank?
 
           zip = (address.postal_code || '').match(/^(\d{5})?-?(\d{4})?$/)
-          xml['tns'].ZIPCode(     zip[1]) unless zip[1].nil?
-          xml['tns'].ZIPCodeAddOn(zip[2]) unless zip[2].nil?
+          xml['tns'].ZIPCode(     zip[1]) unless zip.nil? || zip[1].nil?
+          xml['tns'].ZIPCodeAddOn(zip[2]) unless zip.nil? || zip[2].nil?
         else
           xml['tns'].Province(    address.province) unless address.province.blank?
           xml['tns'].PostalCode(  address.postal_code) unless address.postal_code.blank?
